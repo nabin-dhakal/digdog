@@ -1,6 +1,6 @@
 export default {
   content: [
-    "./**/*.{ts,tsx}",
+    "./**/*.{js,jsx,ts,tsx}",
     "!./node_modules/**/*"
   ],
   theme: { extend: {} },

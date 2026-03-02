@@ -1,5 +1,5 @@
-import { useState } from "react"
-import "./style.css"
+import { useState } from "react";
+import "./style.css";
 
 const Section = ({ title, icon, children }) => (
   <div className="mb-3 rounded-xl border border-white/10 bg-white/5 overflow-hidden">
@@ -9,43 +9,54 @@ const Section = ({ title, icon, children }) => (
     </div>
     <div className="px-4 py-3 space-y-2">{children}</div>
   </div>
-)
+);
 
 const Row = ({ label, value }) => (
   <div className="flex justify-between items-start gap-4">
     <span className="text-xs text-zinc-500 shrink-0 pt-0.5">{label}</span>
-    <span className="text-xs text-zinc-200 text-right break-all">{value || <span className="text-zinc-600">—</span>}</span>
+    <span className="text-xs text-zinc-200 text-right break-all">
+      {value ?? <span className="text-zinc-600">—</span>}
+    </span>
   </div>
-)
+);
 
 export default function Popup() {
-  const [domain, setDomain] = useState("")
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [domain, setDomain] = useState("");
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const lookup = async () => {
-    if (!domain.trim()) return
-    setLoading(true)
-    setData(null)
-    setError(null)
+    if (!domain.trim()) return;
+    setLoading(true);
+    setData(null);
+    setError(null);
+
     try {
-      const res = await fetch("https://digdog.onrender.com/lookup", {
+      const res = await fetch("http://localhost:8000/lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain: domain.trim() })
-      })
-      if (!res.ok) throw new Error("Server error")
-      const json = await res.json()
-      setData(json)
-    } catch (e) {
-      setError("Failed to reach server. Is FastAPI running?")
-    } finally {
-      setLoading(false)
-    }
-  }
+        body: JSON.stringify({ domain: domain.trim() }),
+      });
 
-  const handleKey = (e) => e.key === "Enter" && lookup()
+      if (!res.ok) throw new Error("Server error");
+      const json = await res.json();
+
+      setData({
+        dns: json.dns && Object.keys(json.dns).length ? json.dns : null,
+        ip: json.ip && Object.keys(json.ip).length ? json.ip : null,
+        whois: json.whois && Object.keys(json.whois).length ? json.whois : null,
+        server: json.server && Object.keys(json.server).length ? json.server : null,
+      });
+    } catch (e) {
+      console.error(e);
+      setError("Failed to reach server. Is FastAPI running?");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKey = (e) => e.key === "Enter" && lookup();
 
   return (
     <div
@@ -80,7 +91,7 @@ export default function Popup() {
         {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
       </div>
 
-      {data && (
+      {data ? (
         <div className="px-5 pb-5 space-y-1">
 
           {data.dns && (
@@ -89,12 +100,19 @@ export default function Popup() {
             </Section>
           )}
 
-          {data.ip && Object.keys(data.ip).length > 0 && (
+          {data.ip && (
             <Section title="IP Info" icon="📍">
               <Row label="Country" value={data.ip.country} />
               <Row label="City" value={data.ip.city} />
               <Row label="ISP" value={data.ip.isp} />
-              <Row label="Coordinates" value={data.ip.lat && `${data.ip.lat}, ${data.ip.lon}`} />
+              <Row
+                label="Coordinates"
+                value={
+                  data.ip.lat != null && data.ip.lon != null
+                    ? `${data.ip.lat}, ${data.ip.lon}`
+                    : null
+                }
+              />
             </Section>
           )}
 
@@ -114,15 +132,12 @@ export default function Popup() {
               <Row label="CDN" value={data.server.cdn} />
             </Section>
           )}
-
         </div>
-      )}
-
-      {!data && !loading && (
+      ) : !loading ? (
         <div className="px-5 pb-6 text-center text-xs text-zinc-600">
           Enter a domain and press DIG
         </div>
-      )}
+      ) : null}
     </div>
-  )
+  );
 }
