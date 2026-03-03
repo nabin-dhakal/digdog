@@ -13,6 +13,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+async def home():
+    return {"message":"Always OK"}
+
 @app.post("/lookup")
 async def lookup(body: dict):
     domain = body["domain"]
