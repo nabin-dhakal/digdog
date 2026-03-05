@@ -13,22 +13,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import re
-
-def clean_domain(domain):
-    domain = domain.lower()
-    domain = domain.replace("https://", "").replace("http://", "")
-    domain = domain.replace("www.", "")
-    domain = domain.split("/")[0]
-    return domain
-
 @app.get("/")
 async def home():
     return {"message":"Always OK"}
 
 @app.post("/lookup")
 async def lookup(body: dict):
-    domain = clean_domain(body["domain"])
+    domain = body["domain"]
     
     async with httpx.AsyncClient() as client:
         dns_data, whois_data, server_data = await asyncio.gather(
@@ -44,9 +35,7 @@ async def lookup(body: dict):
         async with httpx.AsyncClient() as client:
             ip_data = await get_ip(client, ip)
 
-    if not dns_data and not whois_data:
-        return {"message": "No data found for this domain"}
-    
+    print(whois_data)
     return {
         "dns": dns_data if isinstance(dns_data, dict) else {},
         "ip": ip_data,
@@ -57,9 +46,7 @@ async def lookup(body: dict):
 async def get_dns(client, domain):
     resp = await client.get(f"https://dns.google/resolve?name={domain}&type=A")
     data = resp.json()
-    ip = None
-    if "Answer" in data and len(data["Answer"]) > 0:
-        ip = data["Answer"][0].get("data")
+    ip = data["Answer"][0]["data"] if "Answer" in data else None
     return {"ip": ip, "raw": data}
 
 async def get_ip(client, ip):
@@ -83,50 +70,57 @@ async def get_ip(client, ip):
     return {"ip": ip}  
 
 async def get_whois(client, domain):
-    try:
-        bootstrap = await client.get("https://data.iana.org/rdap/dns.json")
-        bootstrap_data = bootstrap.json()
-
-        tld = domain.split(".")[-1]
-        rdap_url = None
-
-        for service in bootstrap_data["services"]:
-            if tld in service[0]:
-                rdap_url = service[1][0]
-                break
-
-        if not rdap_url:
-            return {}
-
-        resp = await client.get(f"{rdap_url}domain/{domain}")
-        data = resp.json()
-
-    except Exception:
-        return {}
+    resp = await client.get(f"https://rdap.verisign.com/com/v1/domain/{domain}")
+    data = resp.json()
 
     registrar = None
     registrant = None
+    registered = None
+    expiry = None
+    updated = None
+
+    nameservers = [ns.get("ldhName") for ns in data.get("nameservers", [])]
+    dnssec_signed = data.get("secureDNS", {}).get("delegationSigned", False)
+    handle = data.get("handle")
+    domain_name = data.get("ldhName")
 
     for entity in data.get("entities", []):
         roles = entity.get("roles", [])
         vcard = entity.get("vcardArray", [])
         fn = None
-
+        email = None
         if vcard and len(vcard) > 1:
             for item in vcard[1]:
                 if item[0] == "fn":
                     fn = item[3]
+                if item[0] == "email":
+                    email = item[3]
 
         if "registrar" in roles:
             registrar = fn
         if "registrant" in roles:
-            registrant = fn
+            registrant = fn if fn else "Privacy/Proxy Service"
+    
+    for event in data.get("events", []):
+        action = event.get("eventAction")
+        date = event.get("eventDate")
+        if action == "registration":
+            registered = date
+        elif action == "expiration":
+            expiry = date
+        elif action in ("last changed", "last update of RDAP database"):
+            updated = date
 
     return {
-        "domain": data.get("ldhName"),
+        "handle": handle,
+        "domain": domain_name,
         "registrar": registrar,
         "registrant": registrant,
-        "nameservers": [ns.get("ldhName") for ns in data.get("nameservers", [])]
+        "registered": registered,
+        "expiry": expiry,
+        "updated": updated,
+        "nameservers": nameservers,
+        "dnssec_signed": dnssec_signed,
     }
 
 async def get_server_info(client, domain):
